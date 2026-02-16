@@ -1,12 +1,21 @@
 import SwiftUI
 import ServiceManagement
+import UserNotifications
 
 @main
 struct ZabbixMenuBarApp: App {
     @StateObject private var zabbixClient = ZabbixAPIClient()
     @ObservedObject private var languageManager = LanguageManager.shared
+    @State private var menuBarID = UUID()
 
     init() {
+        // Request notification authorization
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+            if let error = error {
+                print("Notification authorization error: \(error)")
+            }
+        }
+        
         // Ensure login item is registered with the correct app name
         registerLoginItem()
     }
@@ -18,13 +27,19 @@ struct ZabbixMenuBarApp: App {
                 .frame(width: 400, height: 500)
                 .environment(\.colorScheme, .dark)
                 .environment(\.locale, languageManager.effectiveLocale)
+                .onChange(of: zabbixClient.severityCounts) {
+                    // Force menu bar icon refresh when counts change
+                    menuBarID = UUID()
+                }
+                .onChange(of: zabbixClient.problems.count) {
+                    menuBarID = UUID()
+                }
+                .onChange(of: zabbixClient.hosts.count) {
+                    menuBarID = UUID()
+                }
         } label: {
-            Image(nsImage: {
-                let image = NSImage(systemSymbolName: "z.square.fill", accessibilityDescription: "Zabbix")!
-                image.isTemplate = true
-                let config = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular)
-                return image.withSymbolConfiguration(config)!
-            }())
+            MenuBarStatusView(client: zabbixClient)
+                .id(menuBarID)
         }
         .menuBarExtraStyle(.window)
 
@@ -36,19 +51,58 @@ struct ZabbixMenuBarApp: App {
     }
 }
 
-struct MenuBarIcon: View {
-    let problemCount: Int
-    let hasError: Bool
-
+struct MenuBarStatusView: View {
+    @ObservedObject var client: ZabbixAPIClient
+    
+    private var totalProblems: Int { client.problems.count }
+    private var totalHosts: Int { client.hosts.count }
+    private var severityCounts: [Int: Int] { client.severityCounts }
+    private var hasError: Bool { client.error != nil }
+    
     var body: some View {
-        HStack(spacing: 2) {
-            Image(systemName: hasError ? "exclamationmark.triangle" : "z.square.fill")
-            if problemCount > 0 {
-                Text("\(problemCount)")
-                    .font(.caption2)
+        let _ = print("MenuBar update - Problems: \(totalProblems), Counts: \(severityCounts)")
+        
+        return Text(menuBarText)
+            .font(.system(size: 12))
+    }
+    
+    private var menuBarText: String {
+        if hasError {
+            return "⚠️"
+        } else if totalProblems == 0 {
+            return "✅ \(totalHosts)"
+        } else {
+            var text = ""
+            // Disaster (5) - ⚫ black circle
+            if let count = severityCounts[5], count > 0 {
+                text += "⚫\(count) "
             }
+            // High (4) - 🔴 red circle
+            if let count = severityCounts[4], count > 0 {
+                text += "🔴\(count) "
+            }
+            // Average (3) - 🟠 orange circle
+            if let count = severityCounts[3], count > 0 {
+                text += "🟠\(count) "
+            }
+            // Warning (2) - 🟡 yellow circle
+            if let count = severityCounts[2], count > 0 {
+                text += "🟡\(count) "
+            }
+            // Information (1) - 🔵 blue circle
+            if let count = severityCounts[1], count > 0 {
+                text += "🔵\(count) "
+            }
+            // Not classified (0) - ⚪ white circle
+            if let count = severityCounts[0], count > 0 {
+                text += "⚪\(count) "
+            }
+            return text.trimmingCharacters(in: .whitespaces)
         }
     }
+    
+
+
 }
 
 // MARK: - Login Item Management

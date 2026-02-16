@@ -3,6 +3,7 @@ import Security
 import SwiftUI
 import WidgetKit
 import Combine
+import UserNotifications
 
 // MARK: - Zabbix API Models
 
@@ -13,6 +14,8 @@ struct ZabbixProblem: Identifiable, Codable {
     let severity: String
     let clock: String
     let acknowledged: String
+    let hostid: String
+    let hostname: String
 
     var id: String { eventid }
 
@@ -55,7 +58,7 @@ enum SeverityLevel: Int, CaseIterable {
         case .warning: return "yellow"
         case .average: return "orange"
         case .high: return "red"
-        case .disaster: return "purple"
+        case .disaster: return "black"
         }
     }
 }
@@ -71,6 +74,13 @@ struct ZabbixHost: Identifiable, Codable {
     var isEnabled: Bool {
         status == "0"
     }
+}
+
+// Simplified host structure for trigger.get API (no status field)
+struct ZabbixTriggerHost: Codable {
+    let hostid: String
+    let host: String
+    let name: String
 }
 
 struct ZabbixTrigger: Codable {
@@ -93,6 +103,7 @@ struct ZabbixTriggerWithEvent: Codable {
     let lastchange: String
     let value: String
     let lastEvent: ZabbixEvent?
+    let hosts: [ZabbixTriggerHost]?
 }
 
 // MARK: - API Response Types
@@ -356,9 +367,15 @@ class ZabbixAPIClient: ObservableObject {
     @Published var error: String?
     @Published var isAuthenticated = false
     @Published var lastRefresh: Date?
+    @Published var severityCounts: [Int: Int] = [:]  // Count of problems per severity level
 
     /// Pause auto-refresh (e.g., when context menu is open)
     var pauseRefresh = false
+    
+    // Notification tracking
+    private var previousProblems: Set<String> = []  // Track eventids we've already seen
+    private var notificationBuffer: [String: [ZabbixProblem]] = [:]  // hostid -> problems
+    private var notificationWorkItem: DispatchWorkItem?
 
     // Configuration - simple @Published without didSet
     @Published var serverURL: String = ""
@@ -494,6 +511,12 @@ class ZabbixAPIClient: ObservableObject {
         }
 
         widgetProblemCount = savedProblemCount > 0 ? savedProblemCount : 6
+        
+        // Load previously seen problem eventids for notification tracking
+        if let data = UserDefaults.standard.data(forKey: "previous_problem_eventids"),
+           let eventids = try? JSONDecoder().decode(Set<String>.self, from: data) {
+            previousProblems = eventids
+        }
 
         setupSession()
         setupPersistenceSubscriptions()
@@ -757,11 +780,23 @@ class ZabbixAPIClient: ObservableObject {
             hosts = try await hostsResult
             problems = newProblems
             lastRefresh = Date()
+            
+            // Calculate severity counts for menu bar display
+            var counts: [Int: Int] = [:]
+            for problem in newProblems {
+                let severity = Int(problem.severity) ?? 0
+                counts[severity, default: 0] += 1
+            }
+            severityCounts = counts
+            
+            // Detect new problems for notifications
+            detectNewProblems(newProblems)
 
             // Save to shared storage for widget
             saveDataForWidget()
         } catch let apiError as ZabbixAPIError {
             error = apiError.localizedDescription
+            print("❌ ZabbixAPIError in refreshData: \(apiError)")
             // Token might be expired
             if apiError.code == -32602 || apiError.message.contains("Session") {
                 isAuthenticated = false
@@ -769,10 +804,102 @@ class ZabbixAPIClient: ObservableObject {
                 KeychainHelper.deleteToken(for: serverURL)
             }
         } catch {
+            print("❌ Error in refreshData: \(error)")
             self.error = error.localizedDescription
         }
 
         isLoading = false
+    }
+    
+    // MARK: - Notification System
+    
+    /// Detect new problems and add them to notification buffer
+    private func detectNewProblems(_ newProblems: [ZabbixProblem]) {
+        let currentEventIds = Set(newProblems.map { $0.eventid })
+        let newEventIds = currentEventIds.subtracting(previousProblems)
+        
+        // If there are new problems, add them to the buffer grouped by host
+        if !newEventIds.isEmpty {
+            for problem in newProblems where newEventIds.contains(problem.eventid) {
+                notificationBuffer[problem.hostid, default: []].append(problem)
+            }
+            
+            // Cancel any pending notification work
+            notificationWorkItem?.cancel()
+            
+            // Schedule notification send after 10 seconds
+            let workItem = DispatchWorkItem { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.sendGroupedNotifications()
+                }
+            }
+            notificationWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10.0, execute: workItem)
+        }
+        
+        // Update previousProblems with current state
+        previousProblems = currentEventIds
+        
+        // Save to UserDefaults for persistence
+        if let data = try? JSONEncoder().encode(previousProblems) {
+            UserDefaults.standard.set(data, forKey: "previous_problem_eventids")
+        }
+    }
+    
+    /// Send grouped notifications after 10-second delay
+    private func sendGroupedNotifications() {
+        guard !notificationBuffer.isEmpty else { return }
+        
+        for (hostid, problems) in notificationBuffer {
+            // Get hostname from the first problem (they all have the same host)
+            guard let hostname = problems.first?.hostname else { continue }
+            
+            // Group problems by severity
+            var severityGroups: [Int: Int] = [:]
+            for problem in problems {
+                let severity = Int(problem.severity) ?? 0
+                severityGroups[severity, default: 0] += 1
+            }
+            
+            // Build notification content
+            let content = UNMutableNotificationContent()
+            content.sound = .default
+            
+            if problems.count == 1 {
+                // Single problem
+                let problem = problems[0]
+                let severityName = problem.severityLevel.name
+                content.title = "Zabbix Alert - \(hostname)"
+                content.body = "\(severityName): \(problem.name)"
+            } else {
+                // Multiple problems
+                content.title = "Zabbix Alert - \(hostname)"
+                let severityText = severityGroups
+                    .sorted { $0.key > $1.key }  // Sort by severity (highest first)
+                    .map { "\(SeverityLevel(rawValue: $0.key)?.name ?? "Unknown") (\($0.value))" }
+                    .joined(separator: ", ")
+                content.body = "\(problems.count) new problems: \(severityText)"
+            }
+            
+            // Add user info to open Zabbix when clicked
+            content.userInfo = ["hostid": hostid, "serverURL": serverURL]
+            
+            // Send notification
+            let request = UNNotificationRequest(
+                identifier: "zabbix-\(hostid)-\(Date().timeIntervalSince1970)",
+                content: content,
+                trigger: nil  // Send immediately
+            )
+            
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error = error {
+                    print("Notification error: \(error)")
+                }
+            }
+        }
+        
+        // Clear the buffer
+        notificationBuffer.removeAll()
     }
 
     private func saveDataForWidget() {
@@ -1074,6 +1201,7 @@ class ZabbixAPIClient: ObservableObject {
                     "value": 1  // Only triggers currently in PROBLEM state
                 ],
                 "selectLastEvent": ["eventid", "acknowledged"],  // Get the actual event ID
+                "selectHosts": ["hostid", "host", "name"],  // Get host info
                 "sortfield": "lastchange",
                 "sortorder": "DESC",
                 "limit": 50,
@@ -1091,7 +1219,16 @@ class ZabbixAPIClient: ObservableObject {
             // Convert triggers to problems format
             let problems = triggers.compactMap { trigger -> ZabbixProblem? in
                 // Use the actual event ID from lastEvent, not the trigger ID
-                guard let lastEvent = trigger.lastEvent else { return nil }
+                guard let lastEvent = trigger.lastEvent else {
+                    print("⚠️ Trigger \(trigger.triggerid) has no lastEvent")
+                    return nil
+                }
+                
+                // Check if hosts array exists and has at least one host
+                guard let hosts = trigger.hosts, !hosts.isEmpty, let firstHost = hosts.first else {
+                    print("⚠️ Trigger \(trigger.triggerid) has no hosts - description: \(trigger.description)")
+                    return nil
+                }
 
                 return ZabbixProblem(
                     eventid: lastEvent.eventid,
@@ -1099,11 +1236,15 @@ class ZabbixAPIClient: ObservableObject {
                     name: trigger.description,
                     severity: trigger.priority,
                     clock: trigger.lastchange,
-                    acknowledged: lastEvent.acknowledged
+                    acknowledged: lastEvent.acknowledged,
+                    hostid: firstHost.hostid,
+                    hostname: firstHost.name
                 )
             }
+            print("✅ Successfully fetched \(problems.count) problems from \(triggers.count) triggers")
             return problems
         } else if let apiError = response.error {
+            print("❌ Zabbix API Error: \(apiError.localizedDescription)")
             throw apiError
         }
         return []
