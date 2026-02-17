@@ -163,7 +163,7 @@ struct SeverityFilter: Codable, Equatable {
     var high: Bool = true
     var average: Bool = true
     var warning: Bool = true
-    var information: Bool = false
+    var information: Bool = true
     var notClassified: Bool = false
 
     /// Returns array of severity levels that are enabled

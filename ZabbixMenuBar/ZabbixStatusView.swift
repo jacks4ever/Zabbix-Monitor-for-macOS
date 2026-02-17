@@ -290,8 +290,14 @@ struct HeaderView: View {
     }
 
     private var connectionStatus: String {
-        if let url = URL(string: client.serverURL), let host = url.host {
-            return host
+        if let url = URL(string: client.serverURL) {
+            if let host = url.host {
+                // Include port if present and not default (80/443)
+                if let port = url.port, port != 80 && port != 443 {
+                    return "\(host):\(port)"
+                }
+                return host
+            }
         }
         return String(localized: "status.connected")
     }
@@ -566,11 +572,17 @@ struct ProblemRowView: View {
                 .frame(width: 10, height: 10)
                 .shadow(color: severityColor.opacity(0.4), radius: 3)
 
-            Text(problem.name)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .lineLimit(2)
-                .foregroundColor(.white)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(problem.name)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(2)
+                    .foregroundColor(.white)
+                
+                Text(problem.hostname)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Spacer()
 
