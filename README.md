@@ -13,7 +13,9 @@ Stop switching to browser tabs to check your Zabbix alerts. Get real-time proble
 
 ## Why Use This?
 
-- **Glanceable status** – Problem count + severity color always visible in menu bar
+- **Glanceable status** – All severity counts visible in menu bar with color-coded badges
+- **One-click access** – Jump directly to hosts and problems in Zabbix web UI
+- **Smart notifications** – Get notified of new problems, grouped by host
 - **Desktop widget** – AI summaries of active issues (Ollama, OpenAI, or Claude)
 - **Acknowledge from anywhere** – Right-click problems to ack without opening Zabbix
 - **8 languages** – English, Spanish, French, German, Chinese, Japanese, Latvian, Russian
@@ -21,10 +23,12 @@ Stop switching to browser tabs to check your Zabbix alerts. Get real-time proble
 ## Features
 
 ### Menu Bar App
-- **Real-time Problem Count**: Displays current Zabbix problem count in the macOS menu bar
-- **Severity-based Colors**: Menu bar icon color reflects highest severity (Purple=Disaster, Red=High, Orange=Average, Yellow=Warning, Blue=Info, Green=OK)
+- **Smart Status Display**: Menu bar shows color-coded severity counts (⚫ Disaster, 🔴 High, 🟠 Average, 🟡 Warning, 🔵 Info) or ✅ with total host count when all clear
+- **Clickable Links**: Click on hosts or problems to open the corresponding Zabbix web page directly
+- **Mouse-Over Details**: Hover over host problem badges to preview the full list of issues
+- **Push Notifications**: Get notified when new problems occur, grouped by host with smart buffering
 - **Problems Tab**: View all active problems with severity indicators and timestamps
-- **Hosts Tab**: Browse all monitored hosts with problem count badges
+- **Hosts Tab**: Browse all monitored hosts with per-severity problem badges (defaults to open)
 - **Problem Acknowledgement**: Right-click to acknowledge problems with optional messages
 - **Host Search**: Filter hosts by name with instant search
 
@@ -89,14 +93,15 @@ Stop switching to browser tabs to check your Zabbix alerts. Get real-time proble
 
 ## Severity Colors
 
-The menu bar icon shows the current problem count, color-coded by severity:
+The menu bar displays individual counts for each active severity level:
 
-🟣 Disaster (severity 5)<br>
+⚫ Disaster (severity 5)<br>
 🔴 High (severity 4)<br>
 🟠 Average (severity 3)<br>
 🟡 Warning (severity 2)<br>
 🔵 Information (severity 1)<br>
-🟢 No active problems
+⚪ Not Classified (severity 0)<br>
+✅ No active problems (shows total host count)
 
 ## Quick Start
 

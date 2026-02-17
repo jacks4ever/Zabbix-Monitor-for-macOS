@@ -166,7 +166,20 @@ class HostIconManager: ObservableObject {
 
 struct ZabbixStatusView: View {
     @EnvironmentObject var client: ZabbixAPIClient
-    @State private var selectedTab = 0
+    @State private var selectedTab = 0  // 0 = Hosts tab by default (now first)
+    
+    /// Build Zabbix web UI URL from API URL
+    private func buildZabbixWebURL(path: String) -> URL? {
+        guard let apiURL = URL(string: client.serverURL) else { return nil }
+        
+        // Remove /api_jsonrpc.php from the URL
+        var baseURL = apiURL.deletingLastPathComponent().absoluteString
+        if baseURL.hasSuffix("/") {
+            baseURL.removeLast()
+        }
+        
+        return URL(string: "\(baseURL)/\(path)")
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -175,10 +188,10 @@ struct ZabbixStatusView: View {
                 .environmentObject(client)
 
             if client.isAuthenticated {
-                // Tab selector
+                // Tab selector (Hosts first, Services second)
                 Picker("", selection: $selectedTab) {
-                    Text("tab.problems").tag(0)
-                    Text("tab.hosts").tag(1)
+                    Text("tab.hosts").tag(0)
+                    Text("tab.problems").tag(1)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -202,10 +215,10 @@ struct ZabbixStatusView: View {
                     }
                 } else {
                     if selectedTab == 0 {
-                        ProblemsListView()
+                        HostsListView()
                             .environmentObject(client)
                     } else {
-                        HostsListView()
+                        ProblemsListView()
                             .environmentObject(client)
                     }
                 }
@@ -277,8 +290,14 @@ struct HeaderView: View {
     }
 
     private var connectionStatus: String {
-        if let url = URL(string: client.serverURL), let host = url.host {
-            return host
+        if let url = URL(string: client.serverURL) {
+            if let host = url.host {
+                // Include port if present and not default (80/443)
+                if let port = url.port, port != 80 && port != 443 {
+                    return "\(host):\(port)"
+                }
+                return host
+            }
         }
         return String(localized: "status.connected")
     }
@@ -553,11 +572,17 @@ struct ProblemRowView: View {
                 .frame(width: 10, height: 10)
                 .shadow(color: severityColor.opacity(0.4), radius: 3)
 
-            Text(problem.name)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .lineLimit(2)
-                .foregroundColor(.white)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(problem.name)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(2)
+                    .foregroundColor(.white)
+                
+                Text(problem.hostname)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Spacer()
 
@@ -578,6 +603,9 @@ struct ProblemRowView: View {
                 .fill(isHovering ? .white.opacity(0.06) : .clear)
         )
         .contentShape(RoundedRectangle(cornerRadius: 10))
+        .onTapGesture {
+            openProblemInZabbix()
+        }
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovering = hovering
@@ -607,10 +635,25 @@ struct ProblemRowView: View {
         case .warning: return .yellow
         case .average: return .orange
         case .high: return .red
-        case .disaster: return .purple
+        case .disaster: return .black
         }
     }
 
+    private func openProblemInZabbix() {
+        guard let apiURL = URL(string: client.serverURL) else { return }
+        
+        // Remove /api_jsonrpc.php from the URL
+        var baseURL = apiURL.deletingLastPathComponent().absoluteString
+        if baseURL.hasSuffix("/") {
+            baseURL.removeLast()
+        }
+        
+        // Build event detail URL: tr_events.php?triggerid={objectid}&eventid={eventid}
+        if let url = URL(string: "\(baseURL)/tr_events.php?triggerid=\(problem.objectid)&eventid=\(problem.eventid)") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
     private func showAcknowledgeWindow() {
         let contentView = AcknowledgeSheet(problem: problem)
             .environmentObject(client)
@@ -787,15 +830,13 @@ struct HostsListView: View {
 
     private func problemCount(for host: ZabbixHost) -> Int {
         client.problems.filter { problem in
-            problem.name.localizedCaseInsensitiveContains(host.name) ||
-            problem.name.localizedCaseInsensitiveContains(host.host)
+            problem.hostid == host.hostid
         }.count
     }
 
     private func maxSeverity(for host: ZabbixHost) -> Int {
         client.problems.filter { problem in
-            problem.name.localizedCaseInsensitiveContains(host.name) ||
-            problem.name.localizedCaseInsensitiveContains(host.host)
+            problem.hostid == host.hostid
         }.map { Int($0.severity) ?? 0 }.max() ?? 0
     }
 
@@ -928,46 +969,95 @@ struct HostRowView: View {
     @EnvironmentObject var client: ZabbixAPIClient
     @State private var isHovering = false
     @State private var showProblemsPopover = false
+    @State private var isHoveringPopover = false
     @ObservedObject private var iconManager = HostIconManager.shared
 
     /// Count of active problems for this host
     private var problemCount: Int {
         client.problems.filter { problem in
-            problem.name.localizedCaseInsensitiveContains(host.name) ||
-            problem.name.localizedCaseInsensitiveContains(host.host)
+            problem.hostid == host.hostid
         }.count
     }
-
-    /// Highest severity among problems for this host
-    private var maxSeverity: Int {
-        client.problems.filter { problem in
-            problem.name.localizedCaseInsensitiveContains(host.name) ||
-            problem.name.localizedCaseInsensitiveContains(host.host)
-        }.map { Int($0.severity) ?? 0 }.max() ?? 0
+    
+    /// Count problems by severity for this host
+    private var severityCounts: [Int: Int] {
+        var counts: [Int: Int] = [:]
+        for problem in client.problems where problem.hostid == host.hostid {
+            let severity = Int(problem.severity) ?? 0
+            counts[severity, default: 0] += 1
+        }
+        return counts
     }
 
     /// Color based on severity
-    private var problemBadgeColor: Color {
-        switch maxSeverity {
-        case 5: return Color(red: 0.8, green: 0.3, blue: 0.8)  // Disaster - purple
-        case 4: return Color(red: 1.0, green: 0.35, blue: 0.35)  // High - red
-        case 3: return Color(red: 1.0, green: 0.6, blue: 0.2)  // Average - orange
-        case 2: return Color(red: 1.0, green: 0.9, blue: 0.3)  // Warning - yellow
-        default: return Color(red: 0.3, green: 0.6, blue: 1.0)  // Info/other - blue
+    private func colorForSeverityInt(_ severity: Int) -> Color {
+        switch severity {
+        case 5: return .black  // Disaster - black
+        case 4: return .red  // High - red
+        case 3: return .orange  // Average - orange
+        case 2: return .yellow  // Warning - yellow
+        case 1: return .blue  // Information - blue
+        default: return .gray  // Not classified - gray
         }
     }
 
-    /// List of problem names for tooltip
-    private var problemNames: [String] {
-        client.problems.filter { problem in
-            problem.name.localizedCaseInsensitiveContains(host.name) ||
-            problem.name.localizedCaseInsensitiveContains(host.host)
-        }.map { $0.name }
+    /// List of problems for this host, sorted by severity (highest first)
+    private var problemsForHost: [ZabbixProblem] {
+        client.problems
+            .filter { problem in
+                problem.hostid == host.hostid
+            }
+            .sorted { (Int($0.severity) ?? 0) > (Int($1.severity) ?? 0) }
     }
-
-    /// Tooltip text showing all problems
-    private var problemTooltip: String {
-        problemNames.joined(separator: "\n")
+    
+    /// Color for a given severity level
+    private func colorForSeverity(_ severity: SeverityLevel) -> Color {
+        switch severity {
+        case .disaster: return .black
+        case .high: return .red
+        case .average: return .orange
+        case .warning: return .yellow
+        case .information: return .blue
+        case .notClassified: return .gray
+        }
+    }
+    
+    /// Problem list content (shared between scrollable and non-scrollable views)
+    private var problemListContent: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(problemsForHost, id: \.eventid) { problem in
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(colorForSeverity(problem.severityLevel))
+                        .frame(width: 8, height: 8)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(problem.name)
+                            .font(.subheadline)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.leading)
+                        
+                        Text(problem.timestamp, style: .relative)
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    
+                    Spacer()
+                }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.white.opacity(0.05))
+                )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    openProblemInZabbix(problem)
+                    showProblemsPopover = false
+                }
+            }
+        }
     }
 
     var body: some View {
@@ -996,41 +1086,71 @@ struct HostRowView: View {
             Spacer()
 
             if problemCount > 0 {
+                // Show one badge per severity (only if count > 0)
                 HStack(spacing: 4) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10))
-                    Text("\(problemCount)")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                }
-                .foregroundColor(problemBadgeColor)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule()
-                        .fill(problemBadgeColor.opacity(0.2))
-                )
-                .onTapGesture {
-                    showProblemsPopover.toggle()
+                    ForEach([5, 4, 3, 2, 1, 0], id: \.self) { severity in
+                        if let count = severityCounts[severity], count > 0 {
+                            HStack(spacing: 3) {
+                                Circle()
+                                    .fill(colorForSeverityInt(severity))
+                                    .frame(width: 6, height: 6)
+                                Text("\(count)")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule()
+                                    .fill(colorForSeverityInt(severity).opacity(0.3))
+                            )
+                        }
+                    }
                 }
                 .popover(isPresented: $showProblemsPopover, arrowEdge: .trailing) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Problems")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white.opacity(0.6))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("\(host.name) - \(problemCount) problem\(problemCount > 1 ? "s" : "")")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        
+                        Divider()
+                            .background(Color.white.opacity(0.2))
 
-                        ForEach(problemNames, id: \.self) { name in
-                            Text(name)
-                                .font(.subheadline)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .foregroundColor(.white)
+                        let screenHeight = NSScreen.main?.visibleFrame.height ?? 900
+                        let maxPopoverHeight = screenHeight * 0.7
+                        let estimatedContentHeight = CGFloat(problemsForHost.count) * 60.0 // ~60px per problem
+                        let needsScroll = estimatedContentHeight > maxPopoverHeight
+                        
+                        Group {
+                            if needsScroll {
+                                ScrollView {
+                                    problemListContent
+                                }
+                                .frame(maxHeight: maxPopoverHeight)
+                            } else {
+                                problemListContent
+                            }
                         }
                     }
                     .padding(12)
-                    .frame(minWidth: 200, maxWidth: 300)
+                    .frame(minWidth: 250, maxWidth: 350)
                     .background(Color(nsColor: NSColor(white: 0.15, alpha: 1.0)))
                     .environment(\.colorScheme, .dark)
+                    .onHover { hovering in
+                        isHoveringPopover = hovering
+                    }
+                }
+                .onHover { hovering in
+                    if hovering {
+                        showProblemsPopover = true
+                    } else {
+                        // Delay closing to allow moving to popover
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            if !isHoveringPopover {
+                                showProblemsPopover = false
+                            }
+                        }
+                    }
                 }
             } else {
                 Text("OK")
@@ -1052,6 +1172,9 @@ struct HostRowView: View {
                 .fill(isHovering ? .white.opacity(0.06) : .clear)
         )
         .contentShape(RoundedRectangle(cornerRadius: 10))
+        .onTapGesture {
+            openHostInZabbix()
+        }
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovering = hovering
@@ -1085,6 +1208,43 @@ struct HostRowView: View {
         }
     }
 
+    private func openHostInZabbix() {
+        guard let apiURL = URL(string: client.serverURL) else { return }
+        
+        // Remove /api_jsonrpc.php from the URL
+        var baseURL = apiURL.deletingLastPathComponent().absoluteString
+        if baseURL.hasSuffix("/") {
+            baseURL.removeLast()
+        }
+        
+        // Build problems page URL with host filter
+        // Reset groupids and triggerids to 0 to clear those filters
+        // filter_show=1 shows recent problems
+        // show_suppressed=1 shows suppressed problems
+        let urlString = "\(baseURL)/zabbix.php?action=problem.view&filter_set=1&groupids[]=0&hostids[]=\(host.hostid)&triggerids[]=0&filter_show=1&show_suppressed=1"
+        
+        print("Opening URL: \(urlString)")
+        
+        if let url = URL(string: urlString) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    private func openProblemInZabbix(_ problem: ZabbixProblem) {
+        guard let apiURL = URL(string: client.serverURL) else { return }
+        
+        // Remove /api_jsonrpc.php from the URL
+        var baseURL = apiURL.deletingLastPathComponent().absoluteURL.absoluteString
+        if baseURL.hasSuffix("/") {
+            baseURL.removeLast()
+        }
+        
+        // Build event detail URL: tr_events.php?triggerid={objectid}&eventid={eventid}
+        if let url = URL(string: "\(baseURL)/tr_events.php?triggerid=\(problem.objectid)&eventid=\(problem.eventid)") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
     /// The icon to display (custom or auto-detected)
     private var displayIcon: String {
         if let custom = iconManager.getCustomIcon(for: host.hostid) {

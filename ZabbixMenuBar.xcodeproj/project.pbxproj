@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 70;
+	objectVersion = 56;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -13,13 +13,13 @@
 		097B7E302F12090000458A28 /* SharedData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001226F00013 /* SharedData.swift */; };
 		097B7E312F12090100458A28 /* ZabbixWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 097B7E322F12090100458A28 /* ZabbixWidget.swift */; };
 		097B7E332F12090100458A28 /* ZabbixWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 097B7E342F12090100458A28 /* ZabbixWidgetBundle.swift */; };
+		097B7E402F12090200458A28 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 097B7E412F12090200458A28 /* Assets.xcassets */; };
 		A1000001226F00001 /* ZabbixMenuBarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001226F00002 /* ZabbixMenuBarApp.swift */; };
 		A1000001226F00003 /* ZabbixAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001226F00004 /* ZabbixAPIClient.swift */; };
 		A1000001226F00005 /* ZabbixStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001226F00006 /* ZabbixStatusView.swift */; };
 		A1000001226F00007 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001226F00008 /* SettingsView.swift */; };
 		A1000001226F00012 /* SharedData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001226F00013 /* SharedData.swift */; };
 		A1000001226F00100 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000001226F00101 /* Assets.xcassets */; };
-		097B7E402F12090200458A28 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 097B7E412F12090200458A28 /* Assets.xcassets */; };
 		A1000001226F00200 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001226F00201 /* AppLanguage.swift */; };
 		A1000001226F00202 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001226F00201 /* AppLanguage.swift */; };
 		A1000001226F00203 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A1000001226F00204 /* Localizable.xcstrings */; };
@@ -54,23 +54,22 @@
 		097B7E132F1207FD00458A28 /* ZabbixWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ZabbixWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		097B7E152F1207FD00458A28 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		097B7E172F1207FE00458A28 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		097B7E322F12090100458A28 /* ZabbixWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZabbixWidget.swift; sourceTree = "<group>"; };
+		097B7E342F12090100458A28 /* ZabbixWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZabbixWidgetBundle.swift; sourceTree = "<group>"; };
+		097B7E352F12090100458A28 /* ZabbixWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ZabbixWidget.entitlements; sourceTree = "<group>"; };
+		097B7E412F12090200458A28 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000001226F00002 /* ZabbixMenuBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZabbixMenuBarApp.swift; sourceTree = "<group>"; };
 		A1000001226F00004 /* ZabbixAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZabbixAPIClient.swift; sourceTree = "<group>"; };
 		A1000001226F00006 /* ZabbixStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZabbixStatusView.swift; sourceTree = "<group>"; };
 		A1000001226F00008 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A1000001226F00009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A1000001226F00010 /* ZabbixMenuBar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZabbixMenuBar.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000001226F00010 /* Zabbix Monitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Zabbix Monitor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000001226F00011 /* ZabbixMenuBar.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ZabbixMenuBar.entitlements; sourceTree = "<group>"; };
 		A1000001226F00013 /* SharedData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedData.swift; sourceTree = "<group>"; };
+		A1000001226F00101 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000001226F00201 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
 		A1000001226F00204 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
-		097B7E322F12090100458A28 /* ZabbixWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZabbixWidget.swift; sourceTree = "<group>"; };
-		097B7E342F12090100458A28 /* ZabbixWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZabbixWidgetBundle.swift; sourceTree = "<group>"; };
-		097B7E352F12090100458A28 /* ZabbixWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ZabbixWidget.entitlements; sourceTree = "<group>"; };
-		A1000001226F00101 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		097B7E412F12090200458A28 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
-
 
 /* Begin PBXFrameworksBuildPhase section */
 		097B7E102F1207FD00458A28 /* Frameworks */ = {
@@ -150,7 +149,7 @@
 		A1000001226F00032 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A1000001226F00010 /* ZabbixMenuBar.app */,
+				A1000001226F00010 /* Zabbix Monitor.app */,
 				097B7E132F1207FD00458A28 /* ZabbixWidgetExtension.appex */,
 			);
 			name = Products;
@@ -194,7 +193,7 @@
 			);
 			name = ZabbixMenuBar;
 			productName = ZabbixMenuBar;
-			productReference = A1000001226F00010 /* ZabbixMenuBar.app */;
+			productReference = A1000001226F00010 /* Zabbix Monitor.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -306,7 +305,7 @@
 				CODE_SIGN_ENTITLEMENTS = ZabbixWidget/ZabbixWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = QGG9KJ66D2;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -340,7 +339,7 @@
 				CODE_SIGN_ENTITLEMENTS = ZabbixWidget/ZabbixWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = QGG9KJ66D2;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -491,7 +490,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = QGG9KJ66D2;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -520,7 +519,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = QGG9KJ66D2;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
