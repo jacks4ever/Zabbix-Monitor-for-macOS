@@ -30,5 +30,5 @@ Carthage/Build/
 *.env
 .env.*
 
-# Editor / local tooling
-.vscode/github-accounts.json
+# Editor / local tooling (shared config lives in the tracked .code-workspace)
+.vscode/
