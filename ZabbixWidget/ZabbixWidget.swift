@@ -67,7 +67,9 @@ struct ZabbixProvider: TimelineProvider {
                 problemCount: data.totalProblemCount,  // Use the total count from shared data
                 problems: problems,
                 aiSummary: data.aiSummary,
-                isConfigured: true,
+                // Honour the real auth state so an expired Zabbix session surfaces
+                // as "open the app" rather than silently frozen data.
+                isConfigured: data.isAuthenticated,
                 widgetProblemCount: data.widgetProblemCount
             )
         }

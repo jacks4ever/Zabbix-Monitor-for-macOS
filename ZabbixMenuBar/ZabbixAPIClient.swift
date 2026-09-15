@@ -214,6 +214,12 @@ struct OllamaRequest: Encodable {
     let prompt: String
     let stream: Bool
     let options: OllamaOptions?
+    /// How long Ollama keeps the model resident after the request.
+    ///
+    /// Ollama unloads an idle model after 5 minutes by default, which is exactly
+    /// the refresh interval, so nearly every summary was paying a cold model load.
+    /// On a remote host that can exceed the request timeout and fail the summary.
+    let keep_alive: String?
 }
 
 struct OllamaOptions: Encodable {
@@ -641,7 +647,10 @@ class ZabbixAPIClient: ObservableObject {
         sessionDelegate = ZabbixSessionDelegate(allowSelfSigned: allowSelfSignedCerts)
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 60
+        // Session-wide ceiling that a per-request timeoutInterval cannot raise.
+        // A cold Ollama model load plus generation can exceed 60s, which showed up
+        // as "Unable to generate summary".
+        config.timeoutIntervalForResource = 180
         // Disable caching to ensure fresh data on every request
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.urlCache = nil
@@ -767,6 +776,11 @@ class ZabbixAPIClient: ObservableObject {
                 isAuthenticated = false
                 authToken = nil
                 KeychainHelper.deleteToken(for: serverURL)
+                // Push the dead session through to the widget. Otherwise every
+                // later refresh returns at the isAuthenticated guard above and the
+                // widget keeps serving the last summary with an ageing timestamp,
+                // with no sign that the data stopped updating.
+                saveDataForWidget()
             }
         } catch {
             self.error = error.localizedDescription
@@ -902,6 +916,12 @@ class ZabbixAPIClient: ObservableObject {
             aiSummary = trimmedSummary
         } catch {
             aiSummary = "Unable to generate summary"
+            // Do not let a failed generation stay cached. saveDataForWidget()
+            // commits lastProblemSignature *before* calling us, so without this
+            // reset the error is replayed on every subsequent refresh - for days,
+            // until the problem set itself changes. Clearing it forces a retry on
+            // the next refresh.
+            lastProblemSignature = ""
         }
 
         // Always save shared data (with or without AI summary)
@@ -958,7 +978,7 @@ class ZabbixAPIClient: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 60
 
-        let ollamaRequest = OllamaRequest(model: ollamaModel, prompt: prompt, stream: false, options: OllamaOptions(num_predict: 80))
+        let ollamaRequest = OllamaRequest(model: ollamaModel, prompt: prompt, stream: false, options: OllamaOptions(num_predict: 80), keep_alive: "30m")
         request.httpBody = try JSONEncoder().encode(ollamaRequest)
 
         let (data, response) = try await session.data(for: request)
