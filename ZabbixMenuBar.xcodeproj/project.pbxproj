@@ -13,6 +13,7 @@
 		097B7E302F12090000458A28 /* SharedData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001226F00013 /* SharedData.swift */; };
 		097B7E312F12090100458A28 /* ZabbixWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 097B7E322F12090100458A28 /* ZabbixWidget.swift */; };
 		097B7E332F12090100458A28 /* ZabbixWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 097B7E342F12090100458A28 /* ZabbixWidgetBundle.swift */; };
+		097B7E402F12090100458A28 /* ZabbixIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 097B7E412F12090100458A28 /* ZabbixIconView.swift */; };
 		A1000001226F00001 /* ZabbixMenuBarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001226F00002 /* ZabbixMenuBarApp.swift */; };
 		A1000001226F00003 /* ZabbixAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001226F00004 /* ZabbixAPIClient.swift */; };
 		A1000001226F00005 /* ZabbixStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001226F00006 /* ZabbixStatusView.swift */; };
@@ -66,6 +67,7 @@
 		A1000001226F00204 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		097B7E322F12090100458A28 /* ZabbixWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZabbixWidget.swift; sourceTree = "<group>"; };
 		097B7E342F12090100458A28 /* ZabbixWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZabbixWidgetBundle.swift; sourceTree = "<group>"; };
+		097B7E412F12090100458A28 /* ZabbixIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZabbixIconView.swift; sourceTree = "<group>"; };
 		097B7E352F12090100458A28 /* ZabbixWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ZabbixWidget.entitlements; sourceTree = "<group>"; };
 		A1000001226F00101 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		097B7E412F12090200458A28 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -106,6 +108,7 @@
 			children = (
 				097B7E322F12090100458A28 /* ZabbixWidget.swift */,
 				097B7E342F12090100458A28 /* ZabbixWidgetBundle.swift */,
+				097B7E412F12090100458A28 /* ZabbixIconView.swift */,
 				097B7E352F12090100458A28 /* ZabbixWidget.entitlements */,
 				097B7E412F12090200458A28 /* Assets.xcassets */,
 			);
@@ -270,6 +273,7 @@
 				097B7E302F12090000458A28 /* SharedData.swift in Sources */,
 				097B7E312F12090100458A28 /* ZabbixWidget.swift in Sources */,
 				097B7E332F12090100458A28 /* ZabbixWidgetBundle.swift in Sources */,
+				097B7E402F12090100458A28 /* ZabbixIconView.swift in Sources */,
 				A1000001226F00202 /* AppLanguage.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

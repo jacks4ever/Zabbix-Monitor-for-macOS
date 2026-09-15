@@ -85,16 +85,33 @@ DispatchQueue.main.async {
 
 ## Build & Deploy
 
-**IMPORTANT**: The user builds the app in Xcode. Claude should NEVER attempt to build the app using xcodebuild or similar commands.
+In Xcode:
 
 1. Clean build: `Cmd+Shift+K`
 2. Build: `Cmd+B`
-3. The user will copy to Applications and launch manually
 
-**Exception**: When the user explicitly asks Claude to "copy the new build to /Applications and launch" or similar, Claude should use the following command:
+### Building from the command line
+
+`xcode-select` points at `/Library/Developer/CommandLineTools`, and changing it system-wide needs `sudo`. Set `DEVELOPER_DIR` per command instead — no sudo, and it leaves the system toolchain alone:
+
+```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcodebuild -project ZabbixMenuBar.xcodeproj -scheme ZabbixMenuBar -configuration Debug build
+```
+
+Schemes are `ZabbixMenuBar` and `ZabbixWidgetExtension`. Signing is automatic (team `QGG9KJ66D2`).
+
+### Deploying to /Applications
+
+Claude should do this only when explicitly asked. See "The Widget Runs From the Launched App Bundle" below for the full clean-replace sequence and why verifying the running binary matters:
+
 ```bash
 cp -R ~/Library/Developer/Xcode/DerivedData/ZabbixMenuBar-*/Build/Products/Debug/"Zabbix Monitor.app" /Applications/ && open "/Applications/Zabbix Monitor.app"
 ```
+
+### Adding new source files
+
+The project uses a classic `project.pbxproj` (no `PBXFileSystemSynchronizedRootGroup`), so new files must be registered in four places: `PBXBuildFile`, `PBXFileReference`, the group's `children`, and the target's `Sources` build phase. Verify with `plutil -lint ZabbixMenuBar.xcodeproj/project.pbxproj`.
 
 ## Debugging Widget Issues
 
@@ -123,6 +140,68 @@ If widget shows stale data, remove and re-add the widget from the desktop.
 6. Re-add the widget
 
 Simply removing/re-adding the widget is NOT sufficient for UI changes. A full logout/login is required to clear the widget cache.
+
+### The Widget Runs From the Launched App Bundle, Not the Registered Path (IMPORTANT)
+
+**Problem**: Widget changes appeared to have no effect across multiple rebuilds, logout/login cycles, and three different implementations. The actual cause was that the running widget extension came from the *old* `/Applications` build the whole time, while the new code sat unused in DerivedData.
+
+**The trap**: `pluginkit` reports a *registration*, which is NOT what executes. It happily showed the DerivedData path while a completely different binary was running:
+
+```bash
+# MISLEADING - shows a registration, not the running process
+pluginkit -mAvvv -p com.apple.widgetkit-extension | grep -A3 Zabbix
+```
+
+The widget extension is hosted out of its parent app bundle, so whichever `Zabbix Monitor.app` was *launched* is the one that supplies the extension. Opening the app from `/Applications` makes its embedded (possibly stale) extension the live one, regardless of what is registered.
+
+**Solution**: Always verify against the process table and the binary hash, not the registration:
+
+```bash
+# What is ACTUALLY running - check the path
+ps -eo pid,lstart,comm | grep ZabbixWidgetExtension
+
+# Confirm the deployed binary is the one just built
+A=/Applications/"Zabbix Monitor.app"/Contents/PlugIns/ZabbixWidgetExtension.appex/Contents/MacOS/ZabbixWidgetExtension
+B=$(ls -d ~/Library/Developer/Xcode/DerivedData/ZabbixMenuBar-*/Build/Products/Debug/"Zabbix Monitor.app")/Contents/PlugIns/ZabbixWidgetExtension.appex/Contents/MacOS/ZabbixWidgetExtension
+[ "$(md5 -q "$A")" = "$(md5 -q "$B")" ] && echo MATCH || echo MISMATCH
+```
+
+**Never conclude a widget change failed without confirming the running binary matches the build.**
+
+Deploy with a clean replace rather than copying over the old bundle, so no stale files survive the merge:
+
+```bash
+osascript -e 'tell application "Zabbix Monitor" to quit'; sleep 2
+pkill -f ZabbixWidgetExtension
+rm -rf /Applications/"Zabbix Monitor.app"
+cp -R ~/Library/Developer/Xcode/DerivedData/ZabbixMenuBar-*/Build/Products/Debug/"Zabbix Monitor.app" /Applications/
+open "/Applications/Zabbix Monitor.app"
+killall chronod; killall NotificationCenter
+```
+
+Restarting `chronod` (the widget daemon) is a lighter-weight alternative to logout/login and updates the registration, but has not been proven sufficient to clear the appearance cache.
+
+### Widget Icon Transparency Requires Vector Geometry
+
+**Problem**: To make the "Z" transparent to the background, the glyph was knocked out of the `ZabbixIcon` PNG's alpha channel. The compiled asset was verified correct (`assetutil` reported `Opaque: False, Encoding: ARGB`), but the widget still rendered a solid tile.
+
+**Solution**: Draw the mark as a `Shape` instead of loading a bitmap. Build the tile and the glyph into a single `Path` and fill with the even-odd rule, which makes the Z a genuine hole rather than two composited layers:
+
+```swift
+struct ZabbixMark: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path(roundedRect: rect, cornerRadius: min(rect.width, rect.height) * 0.225, style: .continuous)
+        path.addPath(letterZ(in: rect))   // subtracted by eoFill
+        return path
+    }
+}
+
+ZabbixMark().fill(brand, style: FillStyle(eoFill: true))
+```
+
+Geometry measured from the original artwork so the widget and menu bar marks match: glyph spans 25%-75% horizontally and 19.5%-80.5% vertically, bars are 11.5% of glyph height, the diagonal run is 26% of glyph width, corner radius 22.5%.
+
+The menu bar app still uses `Image("ZabbixIcon")` and is unaffected.
 
 ### Zabbix API: Use trigger.get Instead of problem.get (IMPORTANT)
 
