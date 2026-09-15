@@ -199,11 +199,9 @@ struct ZabbixWidgetEntryView: View {
     var mediumView: some View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    ZabbixIconView()
-                    Text("widget.zabbix")
-                        .font(.headline)
-                }
+                // Icon only - the title is dropped here so the summary column
+                // on the right gets the width instead.
+                ZabbixIconView()
 
                 Spacer()
 
