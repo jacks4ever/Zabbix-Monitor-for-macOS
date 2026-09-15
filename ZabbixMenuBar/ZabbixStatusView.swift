@@ -233,10 +233,7 @@ struct HeaderView: View {
         HStack(spacing: 10) {
             // App icon
             ZStack {
-                Image("ZabbixIcon")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 28, height: 28)
+                ZabbixIconView(size: 28, glyph: .filled(.white))
             }
 
             VStack(alignment: .leading, spacing: 1) {

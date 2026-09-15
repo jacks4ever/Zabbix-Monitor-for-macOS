@@ -825,10 +825,7 @@ struct AboutView: View {
 
             // App Icon and Title
             VStack(spacing: 12) {
-                Image("ZabbixIcon")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 80, height: 80)
+                ZabbixIconView(size: 80, glyph: .filled(.white))
 
                 Text("about.title")
                     .font(.title)
