@@ -29,3 +29,6 @@ Carthage/Build/
 # Secrets (if any)
 *.env
 .env.*
+
+# Editor / local tooling
+.vscode/github-accounts.json
