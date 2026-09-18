@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 
 /// The Zabbix mark drawn as vector geometry, shared by the widget and the menu bar
 /// app so the two always match.
@@ -11,32 +12,47 @@ import SwiftUI
 struct ZabbixIconView: View {
     /// How the Z itself is rendered.
     enum GlyphStyle {
-        /// Cut out of the tile, so whatever is behind shows through. Used by the
-        /// widget, where the background is opaque.
+        /// Cut out of the tile, so whatever is behind shows through.
         case knockout
         /// Painted on top of the tile. Used in the app, where the popover material
         /// behind it is translucent and a hole would show the desktop through it.
         case filled(Color)
+        /// Solid white in full colour, knocked out otherwise.
+        ///
+        /// In WidgetKit's vibrant and accented modes the system draws content as
+        /// monochrome ink, so a painted white glyph disappears into the tile and
+        /// the mark collapses into a featureless block. The knockout is what keeps
+        /// the Z legible there. In full colour a painted glyph looks better and
+        /// matches the menu bar, so pick per mode.
+        case automatic
     }
 
     var size: CGFloat = 28
-    var glyph: GlyphStyle = .knockout
+    var glyph: GlyphStyle = .automatic
+
+    @Environment(\.widgetRenderingMode) private var renderingMode
 
     private let brand = Color(red: 203 / 255, green: 36 / 255, blue: 21 / 255)
 
+    /// Resolves `.automatic` against the current rendering mode. Outside a widget
+    /// the environment value is `.fullColor`, so the app gets the painted glyph.
+    private var resolvedGlyph: GlyphStyle {
+        guard case .automatic = glyph else { return glyph }
+        return renderingMode == .fullColor ? .filled(.white) : .knockout
+    }
+
     var body: some View {
         Group {
-            switch glyph {
-            case .knockout:
-                ZabbixMark()
-                    .fill(brand, style: FillStyle(eoFill: true))
-            case .filled(let color):
+            if case .filled(let color) = resolvedGlyph {
                 ZStack {
                     RoundedRectangle(cornerRadius: size * ZabbixMark.cornerRadiusRatio, style: .continuous)
                         .fill(brand)
                     ZabbixLetterZ()
                         .fill(color)
                 }
+            } else {
+                ZabbixMark()
+                    .fill(brand, style: FillStyle(eoFill: true))
             }
         }
         .frame(width: size, height: size)
