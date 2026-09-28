@@ -519,7 +519,7 @@ class ZabbixAPIClient: ObservableObject {
         let savedProblemCount = UserDefaults.standard.integer(forKey: "widget_problem_count")
 
         // Connection settings
-        serverURL = UserDefaults.standard.string(forKey: "zabbix_server_url") ?? "https://192.168.46.183:2443/api_jsonrpc.php"
+        serverURL = UserDefaults.standard.string(forKey: "zabbix_server_url") ?? "https://your-zabbix-server/api_jsonrpc.php"
         username = UserDefaults.standard.string(forKey: "zabbix_username") ?? ""
         // Default to 300 seconds (5 min) for better battery life
         // Migrate users from old 60-second default to new 300-second default
@@ -545,7 +545,7 @@ class ZabbixAPIClient: ObservableObject {
 
         // AI Configuration
         aiProvider = AIProvider(rawValue: savedProvider) ?? .ollama
-        ollamaURL = UserDefaults.standard.string(forKey: "ollama_url") ?? "http://192.168.200.246:11434"
+        ollamaURL = UserDefaults.standard.string(forKey: "ollama_url") ?? "http://localhost:11434"
         ollamaModel = UserDefaults.standard.string(forKey: "ollama_model") ?? "mistral:7b"
         openAIAPIKey = UserDefaults.standard.string(forKey: "openai_api_key") ?? ""
         openAIModel = UserDefaults.standard.string(forKey: "openai_model") ?? "gpt-4o-mini"
