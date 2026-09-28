@@ -10,9 +10,9 @@ A macOS SwiftUI menu bar application for monitoring Zabbix server alerts with an
 
 ## Configuration
 
-- **Zabbix Server**: https://192.168.46.183:2443/api_jsonrpc.php
-- **Ollama Server**: http://192.168.200.246:11434
-- **Ollama Model**: mistral:7b
+- **Zabbix Server**: set in Settings (e.g. `https://your-zabbix-server/api_jsonrpc.php`)
+- **Ollama Server**: set in Settings (default `http://localhost:11434`)
+- **Ollama Model**: set in Settings (e.g. `mistral:7b`)
 - **Team ID**: QGG9KJ66D2
 
 ## Architecture
@@ -235,6 +235,18 @@ let payload: [String: Any] = [
 - `trigger.get` with `value=1` returns current trigger states (real-time)
 - Trigger `priority` maps to problem `severity`
 - Trigger `description` maps to problem `name`
+
+### "Unable to generate summary" Is Usually the Ollama Host, Not the App (IMPORTANT)
+
+**Problem (2026-09-28)**: the widget said "Unable to generate summary" for hours. The app threw away the provider's error body, so the real cause was invisible: Ollama was answering HTTP 500 `cudaMalloc failed: out of memory` / `do load request ... EOF` because another process on the Ollama host had taken nearly all of its GPU memory.
+
+**Now**:
+- Failures show the provider's own reason: `AI summary unavailable - Ollama HTTP 500: Ollama host is out of GPU memory - model cannot load`. No cached old summary is shown instead, because it would describe problems that may be gone.
+- A failed summary is retried with backoff (one refresh interval, at least 60s, doubling to a 15 min cap). The refresh interval here is 5s, and the old code retried on every refresh, so each tick made the Ollama host attempt, and crash on, a multi-GB model load.
+- Per request, only fast connection failures (refused, reset, DNS) and 502/503/504 are retried, twice at 2s and 8s. A timeout, a 4xx, or Ollama's 500 is not retried within the request.
+- Diagnostics: `/usr/bin/log show --last 30m --predicate 'subsystem == "com.example.ZabbixMenuBar"'`. Use the full path, because in zsh `log` is a builtin and `log show` silently prints nothing.
+
+Summaries come back by themselves once the host can load the model again.
 
 ### Menu Bar App Timer Issues
 

@@ -3,6 +3,11 @@ import Security
 import SwiftUI
 import WidgetKit
 import Combine
+import os
+
+/// AI summary diagnostics: `log show --predicate 'subsystem == "com.example.ZabbixMenuBar"'`
+/// (use /usr/bin/log from zsh - `log` is a shell builtin there).
+private let aiLog = Logger(subsystem: "com.example.ZabbixMenuBar", category: "ai")
 
 // MARK: - Zabbix API Models
 
@@ -230,6 +235,56 @@ struct OllamaResponse: Decodable {
     let response: String
 }
 
+// MARK: - AI Provider Errors
+
+/// A provider failure carrying the provider's own explanation.
+///
+/// Every non-200 used to collapse into "Unable to generate summary", which hid
+/// the actual fault. On 2026-09-28 Ollama was answering HTTP 500
+/// `{"error":"... cudaMalloc failed: out of memory"}` - the GPU on the Ollama
+/// host was full - and nothing in the app said so.
+struct AIProviderError: LocalizedError {
+    let provider: String
+    let status: Int?
+    let reason: String
+
+    var errorDescription: String? {
+        if let hint = modelLoadHint {
+            return "\(provider) HTTP \(status ?? 0): \(hint)"
+        }
+        if let status = status {
+            return "\(provider) HTTP \(status): \(reason)"
+        }
+        return "\(provider): \(reason)"
+    }
+
+    /// Ollama reports a model it cannot load as a 500 whose text names an internal
+    /// runner port (`do load request: Post "http://127.0.0.1:43361/load": EOF`) or
+    /// `cudaMalloc failed: out of memory`. Neither is actionable in a widget; the
+    /// fault is on the Ollama host, almost always GPU memory taken by something else.
+    private var modelLoadHint: String? {
+        let r = reason.lowercased()
+        if r.contains("cudamalloc") || r.contains("out of memory") {
+            return "Ollama host is out of GPU memory - model cannot load"
+        }
+        if r.contains("do load request") || r.contains("llama runner") {
+            return "Ollama host failed to load the model (runner crashed - check its GPU memory)"
+        }
+        return nil
+    }
+
+    /// Pulls the message out of an error body. Ollama answers `{"error": "..."}`;
+    /// OpenAI and Anthropic answer `{"error": {"message": "..."}}`.
+    static func reason(from data: Data) -> String {
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let message = json["error"] as? String { return message }
+            if let error = json["error"] as? [String: Any], let message = error["message"] as? String { return message }
+        }
+        let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty ? "empty response body" : String(text.prefix(200))
+    }
+}
+
 // MARK: - OpenAI API Models
 
 struct OpenAIRequest: Encodable {
@@ -444,6 +499,14 @@ class ZabbixAPIClient: ObservableObject {
 
     private var authToken: String?
     private var lastProblemSignature: String = "" // Track problem IDs + filter to detect changes
+    // Consecutive failed summary generations, and the earliest time to try again.
+    // A failed summary is retried on a later refresh, but not on *every* refresh:
+    // each Ollama attempt against a host that cannot load the model makes it try
+    // (and crash) a multi-GB model load, so hammering it every minute only adds load
+    // to a server that is already broken. Backoff doubles from one refresh to 15 min.
+    private var aiFailureStreak = 0
+    private var lastFailedSignature = ""
+    private var nextAIRetry: Date = .distantPast
     private var session: URLSession!
     private var sessionDelegate: ZabbixSessionDelegate!
     private var refreshTimer: Timer?
@@ -813,8 +876,14 @@ class ZabbixAPIClient: ObservableObject {
         let filterSignature = "\(widgetSeverityFilter.enabledLevels.sorted())"
         let currentSignature = "\(uniqueProblemNames)|\(filterSignature)"
 
+        // A failed generation clears lastProblemSignature so a later refresh retries;
+        // hold that retry until the backoff expires. A genuinely new problem set is
+        // not held - it gets an immediate attempt.
+        let retryHeld = lastProblemSignature.isEmpty && aiFailureStreak > 0
+            && currentSignature == lastFailedSignature && Date() < nextAIRetry
+
         // Regenerate AI summary if problems or filter changed
-        if currentSignature != lastProblemSignature {
+        if currentSignature != lastProblemSignature && !retryHeld {
             lastProblemSignature = currentSignature
 
             Task {
@@ -914,14 +983,34 @@ class ZabbixAPIClient: ObservableObject {
                 trimmedSummary = String(trimmedSummary.prefix(367)) + "..."
             }
             aiSummary = trimmedSummary
+            if aiFailureStreak > 0 {
+                aiLog.notice("AI summary recovered after \(self.aiFailureStreak, privacy: .public) failed attempt(s)")
+            }
+            aiFailureStreak = 0
+            nextAIRetry = .distantPast
+            lastFailedSignature = ""
         } catch {
-            aiSummary = "Unable to generate summary"
+            // Say WHY. The bare "Unable to generate summary" hid a full GPU on the
+            // Ollama host for hours. No cached old summary is shown in its place:
+            // a stale summary would describe problems that may no longer exist.
+            let reason = error.localizedDescription
+            var message = "AI summary unavailable - \(reason)"
+            if message.count > 370 {
+                message = String(message.prefix(367)) + "..."
+            }
+            aiSummary = message
+
             // Do not let a failed generation stay cached. saveDataForWidget()
             // commits lastProblemSignature *before* calling us, so without this
             // reset the error is replayed on every subsequent refresh - for days,
-            // until the problem set itself changes. Clearing it forces a retry on
-            // the next refresh.
+            // until the problem set itself changes. Clearing it forces a retry,
+            // paced by the backoff below.
+            aiFailureStreak += 1
+            let backoff = min(max(refreshInterval, 60) * pow(2, Double(aiFailureStreak - 1)), 900)
+            nextAIRetry = Date().addingTimeInterval(backoff)
+            lastFailedSignature = lastProblemSignature
             lastProblemSignature = ""
+            aiLog.error("AI summary failed (attempt \(self.aiFailureStreak, privacy: .public), next retry in \(Int(backoff), privacy: .public)s): \(reason, privacy: .public)")
         }
 
         // Always save shared data (with or without AI summary)
@@ -941,8 +1030,10 @@ class ZabbixAPIClient: ObservableObject {
     }
 
     private func onAIProviderChanged() {
-        // Reset the problem signature to force regeneration
+        // Reset the problem signature (and any failure backoff) to force regeneration
         lastProblemSignature = ""
+        aiFailureStreak = 0
+        nextAIRetry = .distantPast
 
         // If AI is disabled, immediately clear the summary
         if aiProvider == .disabled {
@@ -981,10 +1072,14 @@ class ZabbixAPIClient: ObservableObject {
         let ollamaRequest = OllamaRequest(model: ollamaModel, prompt: prompt, stream: false, options: OllamaOptions(num_predict: 80), keep_alive: "30m")
         request.httpBody = try JSONEncoder().encode(ollamaRequest)
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await dataWithTransientRetry(for: request, using: session, provider: "Ollama")
 
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw NSError(domain: "OllamaError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Ollama request failed"])
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AIProviderError(provider: "Ollama", status: nil, reason: "no HTTP response")
+        }
+        guard httpResponse.statusCode == 200 else {
+            throw AIProviderError(provider: "Ollama", status: httpResponse.statusCode,
+                                  reason: AIProviderError.reason(from: data))
         }
 
         let ollamaResponse = try JSONDecoder().decode(OllamaResponse.self, from: data)
@@ -1006,6 +1101,7 @@ class ZabbixAPIClient: ObservableObject {
         request.setValue("Bearer \(openAIAPIKey)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 60
 
+        let providerLabel = "OpenAI"
         let openAIRequest = OpenAIRequest(
             model: openAIModel,
             messages: [OpenAIMessage(role: "user", content: prompt)],
@@ -1013,15 +1109,15 @@ class ZabbixAPIClient: ObservableObject {
         )
         request.httpBody = try JSONEncoder().encode(openAIRequest)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await dataWithTransientRetry(for: request, using: URLSession.shared, provider: providerLabel)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NSError(domain: "OpenAIError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
         }
 
         guard httpResponse.statusCode == 200 else {
-            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw NSError(domain: "OpenAIError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "OpenAI error: \(errorMessage)"])
+            throw AIProviderError(provider: "OpenAI", status: httpResponse.statusCode,
+                                  reason: AIProviderError.reason(from: data))
         }
 
         let openAIResponse = try JSONDecoder().decode(OpenAIResponse.self, from: data)
@@ -1044,6 +1140,7 @@ class ZabbixAPIClient: ObservableObject {
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.timeoutInterval = 60
 
+        let providerLabel = "Anthropic"
         let anthropicRequest = AnthropicRequest(
             model: anthropicModel,
             max_tokens: 80,
@@ -1051,19 +1148,59 @@ class ZabbixAPIClient: ObservableObject {
         )
         request.httpBody = try JSONEncoder().encode(anthropicRequest)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await dataWithTransientRetry(for: request, using: URLSession.shared, provider: providerLabel)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NSError(domain: "AnthropicError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
         }
 
         guard httpResponse.statusCode == 200 else {
-            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw NSError(domain: "AnthropicError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Anthropic error: \(errorMessage)"])
+            throw AIProviderError(provider: "Anthropic", status: httpResponse.statusCode,
+                                  reason: AIProviderError.reason(from: data))
         }
 
         let anthropicResponse = try JSONDecoder().decode(AnthropicResponse.self, from: data)
         return anthropicResponse.content.first?.text ?? ""
+    }
+
+    /// Sends a request, retrying only faults that fail fast and are plausibly
+    /// transient: connection refused/reset/lost, DNS failure, and HTTP 502/503/504.
+    ///
+    /// Deliberately NOT retried: timeouts (a retry just burns the timeout again),
+    /// 4xx, and 500 - Ollama's 500 is a model-load failure, and retrying it at once
+    /// only makes the host attempt the same doomed load again. Those surface on the
+    /// first attempt and are retried on a later refresh under the backoff.
+    /// Summary generation is a read, so repeating it cannot duplicate anything.
+    private func dataWithTransientRetry(for request: URLRequest, using session: URLSession,
+                                        provider: String) async throws -> (Data, URLResponse) {
+        let delays: [UInt64] = [2, 8]  // seconds between attempts
+        var attempt = 0
+        while true {
+            attempt += 1
+            do {
+                let (data, response) = try await session.data(for: request)
+                if let http = response as? HTTPURLResponse, [502, 503, 504].contains(http.statusCode),
+                   attempt <= delays.count {
+                    aiLog.notice("\(provider, privacy: .public) HTTP \(http.statusCode, privacy: .public), retrying (attempt \(attempt, privacy: .public))")
+                    try await Task.sleep(nanoseconds: delays[attempt - 1] * 1_000_000_000)
+                    continue
+                }
+                if attempt > 1 {
+                    aiLog.notice("\(provider, privacy: .public) request needed \(attempt, privacy: .public) attempts")
+                }
+                return (data, response)
+            } catch let error as URLError {
+                let transient: Set<URLError.Code> = [.cannotConnectToHost, .networkConnectionLost,
+                                                     .dnsLookupFailed, .cannotFindHost]
+                guard transient.contains(error.code), attempt <= delays.count else {
+                    throw AIProviderError(provider: provider, status: nil,
+                                          reason: attempt > 1 ? "\(error.localizedDescription) (after \(attempt) attempts)"
+                                                              : error.localizedDescription)
+                }
+                aiLog.notice("\(provider, privacy: .public) \(error.localizedDescription, privacy: .public), retrying (attempt \(attempt, privacy: .public))")
+                try await Task.sleep(nanoseconds: delays[attempt - 1] * 1_000_000_000)
+            }
+        }
     }
 
     func testAIProvider() async -> (success: Bool, message: String) {
